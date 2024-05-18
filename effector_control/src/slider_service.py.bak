@@ -1,0 +1,133 @@
+#!/usr/bin/python3
+
+import sys
+import rospy
+import rospkg
+import tf2_ros
+
+import numpy as np
+import sys
+
+from PyQt5.QtWidgets import QApplication, QWidget, QSlider, QLabel, QVBoxLayout
+from PyQt5.QtCore import Qt
+from threading import Thread
+
+from geometry_msgs.msg import WrenchStamped
+from geometry_msgs.msg import Vector3
+from gazebo_msgs.srv import ApplyBodyWrench
+# from tf.transformations import euler_from_quaternion
+
+
+class SliderApp(QWidget):
+	def __init__(self):
+		super().__init__()
+		self.setWindowTitle("Slider App")
+		self.setGeometry(100, 100, 400, 200)  # (x, y, width, height)
+
+		layout = QVBoxLayout()
+
+		self.wrench_in = WrenchStamped()
+
+		self.wrench_in.header.frame_id = 'bvr_SIM/main_arm_SIM/wrist_3_link'
+
+		# Create a QSlider widget
+		self.slider_x = QSlider(Qt.Horizontal, self)
+		layout.addWidget(self.slider_x)
+
+		# Create a QLabel widget
+		self.label_x = QLabel("x vector: 0", self)
+		layout.addWidget(self.label_x)
+
+		#slider y
+		self.slider_y = QSlider(Qt.Horizontal, self)
+		layout.addWidget(self.slider_y)
+
+		self.label_y = QLabel("y vector: 0", self)
+		layout.addWidget(self.label_y)
+
+
+		# Connect the slider's valueChanged signal to the update_label slot
+		# self.slider_x.valueChanged.connect(self.update_label)
+
+		# self.slider_x.valueChanged.connect(self.update_vectors)
+		self.slider_x.valueChanged.connect(self.applyForce)
+		self.slider_x.valueChanged.connect(lambda : self.label_x.setText(f"Slider Value: {self.slider_x.value()}"))
+		self.slider_y.valueChanged.connect(self.applyForce)
+		self.slider_x.valueChanged.connect(lambda : self.label_y.setText(f"Slider Value: {self.slider_y.value()}"))
+		# self.slider_y.valueChanged.connect(self.update_vectors)
+		# self.slider_z.valueChanged.connect(self.update_vectors)
+
+		# self.slider_x.valueChanged.connect(self.publish_vectors)
+		# self.slider_y.valueChanged.connect(self.publish_vectors)
+		# self.slider_z.valueChanged.connect(self.publish_vectors)
+
+		print(tf2_ros.__file__)
+		self.tfBuffer = tf2_ros.Buffer()
+		self.listener = tf2_ros.TransformListener(self.tfBuffer)
+		self.setLayout(layout)
+
+
+	def applyForce(self):
+		rospy.wait_for_service('/gazebo/apply_body_wrench') 
+		force = rospy.ServiceProxy('/gazebo/apply_body_wrench',ApplyBodyWrench)
+
+		wrench          = WrenchStamped()
+		wrench.wrench.force.x  = self.slider_x.value() #this is really z
+		wrench.wrench.force.y  = self.slider_y.value()
+		wrench.wrench.force.z  = 0
+		wrench.wrench.torque.x = 0
+		wrench.wrench.torque.y = 0
+		wrench.wrench.torque.z = 0
+
+		transformed_wrench = self.moveJoint(wrench.wrench)
+
+		wrench.wrench.force.x  = transformed_wrench[0] #this is really z
+		wrench.wrench.force.y  = transformed_wrench[1]
+		wrench.wrench.force.z  = transformed_wrench[2]
+		wrench.wrench.torque.x = transformed_wrench[3]
+		wrench.wrench.torque.y = transformed_wrench[4]
+		wrench.wrench.torque.z = transformed_wrench[5]
+
+		# You can also define the start time if necessary... 
+		force(body_name = "bvr_SIM/main_arm_SIM/wrist_3_link",wrench = wrench.wrench, duration = rospy.Duration(10))
+
+	def moveJoint(self, wrench):
+
+		try:
+			transform = self.listener.lookupTransform('/bvr_SIM/bvr_base_link', '/bvr_SIM/main_arm_SIM/wrist_3_link', rospy.Time(0))
+		except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+			return 
+
+		trans = [ transform.translation.x, transform.translation.y, transform.translation.z]
+		rot = [ transform.rotation]
+
+		print(transform)
+		sys.exit(0)
+
+		force_comp = np.array([wrench.force.x, wrench.force.y, wrench.force.z, 0])
+		moment_comp = np.array([wrench.torque.x, wrench.torque.y, wrench.torque.z, 0])
+
+		trans = np.array(trans)
+		rot = np.array(rot)
+
+		f_rotated = rot.transpose() * force_comp
+		m_rotated = rot.transpose() * moment_comp + ( np.cross(trans, f_rotated))
+
+		f_transformed = f_rotated + trans
+		m_transformed = m_rotated + np.cross(trans, f_rotated)
+
+		return np.array([f_transformed[:2], m_transformed[:2]])
+
+def main():
+	app = QApplication(sys.argv)
+
+	rospy.init_node("force_qt_pub")
+
+	print(":)", rospkg.get_ros_root())
+
+	window = SliderApp()
+	window.show()
+	sys.exit(app.exec_())
+
+if __name__ == "__main__":
+	main()

@@ -1,0 +1,7 @@
+<launch>
+
+	<node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pctls">
+		<param name="cloud_in" type="string" value="/bvr_SIM/bvr_SIM/velodyne_points"/>
+	</node>
+
+</launch>
