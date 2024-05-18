@@ -225,7 +225,7 @@ class Follower:
 		else:	
 			self.saved_force = self.lp_filter(self.saved_force, to_ret)
 
-		# print self.saved_force
+		print self.saved_force
 
 	def calc_overall_force(self):
 
